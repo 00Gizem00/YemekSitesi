@@ -31,12 +31,18 @@
                         <div class="box_order_form">
                             <div class="head">
                                 <div class="title">
-                                    <h3>Kişisel Bilgiler</h3>
+                                    <h3>Adres Seçimi</h3>
                                 </div>
                             </div>
                             <!-- /head -->
                             <div class="main">
-                                {{ form|crispy }}
+                                {% for address in addresses %}
+                                <label class="container_radio">
+                                    {{ address.name }}, {{ address.street }}, {{ address.apartment }}, {{ address.door_number }}, {{ address.city }}, {{ address.postal_code }}
+                                    <input type="radio" name="address" value="{{ address.id }}" {% if forloop.first %}checked{% endif %}>
+                                    <span class="checkmark"></span>
+                                </label>
+                                {% endfor %}                                
                             </div>
                         </div>
                         <!-- /box_order_form -->
@@ -68,7 +74,7 @@
                             </div>
                             <!-- /head -->
                             <div class="main" id="cart-items">
-                                <ul class="clearfix">
+                              <ul class="clearfix">
                                     {% for item in cart_items %}
                                         <li>
                                             <button class="remove-item-btn" data-id="{{ item.id }}">  {{ item.quantity }}x {{ item.menu.name }}</button>

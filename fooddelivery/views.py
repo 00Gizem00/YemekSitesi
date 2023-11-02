@@ -1,3 +1,4 @@
+from os import name
 from django.shortcuts import render, redirect
 from .models import Adress, Cart, Order, OrderItem, Customer, Restaurant, Menu, Menu_Category
 from django.http import HttpRequest, JsonResponse
@@ -33,6 +34,7 @@ def Login(request):
             return redirect('index')
         else:
             messages.error(request, 'Invalid email or password.')
+            return redirect('login')
 
     return render(request, 'login.html', {'form': form})
 
@@ -157,78 +159,67 @@ def remove_from_cart(request, id):
     except (Cart.DoesNotExist, ValueError):
         return JsonResponse({"success": False, "message": "Cart item not found or invalid data."})
 
+# simdi order sayfasında restoranın name_slug'ını alıp, order sayfasına gönderiyoruz.
+# sonra order sayfasında, name_slug'ı kullanarak restoranı buluyoruz.
+# order sayfasında, sepetin dolu olup olmadığını kontrol ediyoruz.
+# eğer sepet boşsa, kullanıcıya hata mesajı gösteriyoruz. ve restoranın sayfasına yönlendiriyoruz.
 
 @login_required(login_url='/login')
-def order(request):
+def order(request, name_slug):
     form = OrderForm(request.POST or None)
+    customer = request.user
+    cart_items = Cart.objects.filter(customer=request.user)
+    total_price = sum(item.total_price for item in cart_items)
+    addresses = Adress.objects.filter(customer=customer)
+    context = {
+        'addresses': addresses,
+        'form': form,
+        'cart_items': cart_items,
+        'total_price': total_price,
+    }
 
     if request.method == "POST" and form.is_valid():
-        cart_items = Cart.objects.filter(customer=request.user)
+        selected_address_id = request.POST.get('address')
+        shipping_address = Adress.objects.filter(id=selected_address_id).first()
 
+        if not shipping_address:
+            messages.error(request, "Please select a valid address.")
+            return redirect('detail-restaurant', name_slug=request.POST.get('name_slug'))
+
+        cart_items = Cart.objects.filter(customer=customer)
         if not cart_items.exists():
-            messages.error(request, "You cannot place an order with an empty cart.")
-            return redirect('order')
+            messages.error(request, "Your cart is empty.")
+            return redirect('detail-restaurant', name_slug=request.POST.get('name_slug'))
 
         for item in cart_items:
             if item.menu.quantity < item.quantity:
                 messages.error(request, f"{item.menu.name} doesn't have enough stock.")
-                return redirect('order')
+                return render(request, 'order.html', context)
 
-        try:
-            with transaction.atomic():
-                customer = request.user
-                shipping_address = Adress.objects.filter(customer=customer).first()
+        with transaction.atomic():
+            order = Order.objects.create(
+                customer=customer,
+                shipping_address=shipping_address,
+                total_price=sum(item.total_price for item in cart_items),
+                status='pending'
+            )
 
-                if not shipping_address:
-                    shipping_address = Adress.objects.create(
-                            customer=customer,
-                            name=form.cleaned_data.get('name'),
-                            phone=form.cleaned_data.get('phone'),
-                            street=form.cleaned_data.get('street'),
-                            apartment=form.cleaned_data.get('apartment'),
-                            door_number=form.cleaned_data.get('door_number'),
-                            city=form.cleaned_data.get('city'),
-                            postal_code=form.cleaned_data.get('postal_code')
-                    )
-
-                order = Order.objects.create(
-                    customer=customer,
-                    shipping_address=shipping_address,
-                    total_price=sum(item.total_price for item in cart_items),
-                    status='pending'
+            for item in cart_items:
+                OrderItem.objects.create(
+                    order=order,
+                    menu=item.menu,
+                    quantity=item.quantity,
+                    price=item.menu.price
                 )
+                item.menu.quantity -= item.quantity
+                item.menu.save()
 
-                for item in cart_items:
-                    OrderItem.objects.create(
-                        order=order,
-                        menu=item.menu,
-                        quantity=item.quantity,
-                        shipping_id=shipping_address.id
-                    )
+            cart_items.delete()
+            messages.success(request, 'Your order has been placed successfully.')
+            return redirect('confirm')
 
-                # Update the product's stock quantity
-                for item in cart_items:
-                    item.menu.quantity -= item.quantity
-                    item.menu.save()
-
-                cart_items.delete()
-
-                messages.success(request, 'Your order has been received.')
-                return redirect('confirm')  # Specify the target view here
-
-        except IntegrityError as e:
-            # Rollback the transaction in case of an error
-            transaction.set_rollback(True)
-
-            # Display an error message to the user
-            messages.error(request, f"An error occurred while processing your order: {e}")
-            return redirect('order')
-        
-
-    cart_items = Cart.objects.filter(customer=request.user)
-    total_price = sum(item.total_price for item in cart_items)
-    context = {'cart_items': cart_items, 'total_price': total_price, 'form': form}
     return render(request, 'order.html', context)
+
 
 
 def confirmorder(request):
