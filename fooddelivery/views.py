@@ -5,9 +5,20 @@ from django.http import HttpRequest, JsonResponse
 from django.db import transaction
 from django.db.utils import IntegrityError
 from django.contrib import messages
-from .forms import OrderForm, RegisterForm, LoginForm
+from .forms import CustomerAdressForm, RegisterForm, LoginForm
 from django.contrib.auth import login, authenticate, logout
 from django.contrib.auth.decorators import login_required
+
+
+#****------BUNU YAPILANDIRACAĞIZ----------*****
+# def addAdress(request):
+#     form = CustomerAdressForm(request.POST or None)
+#     customer = request.user
+#     if request.method == "POST" and form.is_valid():
+#         form.save()
+#         messages.success(request, 'Your address has been created.')
+#         return redirect('profile')
+#     return render(request, 'addAdress.html', {'form': form})
 
 
 
@@ -94,8 +105,7 @@ def detailRestaurant(request, name_slug):
         else:
             # Sepet doluysa, kullanıcıyı 'order' sayfasına yönlendir
             return redirect('order')
-        
-
+    
     restaurant = Restaurant.objects.get(name_slug=name_slug)
     food_items = Menu.objects.filter(restaurant=restaurant)
     cart_items = Cart.objects.filter(customer=request.user)
@@ -121,6 +131,8 @@ def add_to_cart(request, menu_id):
         try:
             menu = Menu.objects.get(id=menu_id)
             selected_quantity = int(request.POST.get('quantity', 1))
+            name_slug = menu.restaurant.name_slug
+            request.session['restaurant'] = name_slug
 
             if menu.quantity < selected_quantity:
                 return JsonResponse({"success": False, "message": "Insufficient menu item quantity."})
@@ -165,7 +177,7 @@ def remove_from_cart(request, id):
 # eğer sepet boşsa, kullanıcıya hata mesajı gösteriyoruz. ve restoranın sayfasına yönlendiriyoruz.
 
 @login_required(login_url='/login')
-def order(request, name_slug):
+def order(request):
     form = OrderForm(request.POST or None)
     customer = request.user
     cart_items = Cart.objects.filter(customer=request.user)
@@ -184,15 +196,15 @@ def order(request, name_slug):
 
         if not shipping_address:
             messages.error(request, "Please select a valid address.")
-            return redirect('detail-restaurant', name_slug=request.POST.get('name_slug'))
+            return redirect('restaurant-list')
 
         cart_items = Cart.objects.filter(customer=customer)
         if not cart_items.exists():
             messages.error(request, "Your cart is empty.")
-            return redirect('detail-restaurant', name_slug=request.POST.get('name_slug'))
+            return redirect('restaurant-list')
 
         for item in cart_items:
-            if item.menu.quantity < item.quantity:
+            if item.menu.quantity < item.quantity and item.menu.quantity != None:
                 messages.error(request, f"{item.menu.name} doesn't have enough stock.")
                 return render(request, 'order.html', context)
 
@@ -209,7 +221,6 @@ def order(request, name_slug):
                     order=order,
                     menu=item.menu,
                     quantity=item.quantity,
-                    price=item.menu.price
                 )
                 item.menu.quantity -= item.quantity
                 item.menu.save()
@@ -217,6 +228,11 @@ def order(request, name_slug):
             cart_items.delete()
             messages.success(request, 'Your order has been placed successfully.')
             return redirect('confirm')
+    
+    cart_items = Cart.objects.filter(customer=customer)
+    if not cart_items.exists():
+        messages.error(request, "Your cart is empty.")
+        return redirect('restaurant-list')
 
     return render(request, 'order.html', context)
 
