@@ -4,7 +4,7 @@ from .validators import phone_number_validator
 from django.contrib.auth.forms import UserCreationForm
 
 
-class CustomerAdressForm(forms.ModelForm):
+class CustomerAddressForm(forms.ModelForm):
     class Meta:
         model = Adress
         fields = ['name', 'phone', 'street', 'apartment', 'door_number', 'city', 'postal_code']

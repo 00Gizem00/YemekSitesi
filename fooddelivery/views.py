@@ -5,21 +5,9 @@ from django.http import HttpRequest, JsonResponse
 from django.db import transaction
 from django.db.utils import IntegrityError
 from django.contrib import messages
-from .forms import CustomerAdressForm, RegisterForm, LoginForm
+from .forms import CustomerAddressForm, RegisterForm, LoginForm
 from django.contrib.auth import login, authenticate, logout
 from django.contrib.auth.decorators import login_required
-
-
-#****------BUNU YAPILANDIRACAĞIZ----------*****
-# def addAdress(request):
-#     form = CustomerAdressForm(request.POST or None)
-#     customer = request.user
-#     if request.method == "POST" and form.is_valid():
-#         form.save()
-#         messages.success(request, 'Your address has been created.')
-#         return redirect('profile')
-#     return render(request, 'addAdress.html', {'form': form})
-
 
 
 def index(request):
@@ -84,12 +72,34 @@ def custom_404(request, exception):
 
 @login_required(login_url='/login')
 def profile(request):
-    
+    # Login olan kullanici
     customer = request.user
-    users = Customer.objects.filter(email=customer.email)
+    customer_email = request.user.email
+
+    # Kullanıcının adresleri ve sipariş geçmişi
     customer_adress = Adress.objects.filter(customer=request.user)
+    address_count = customer.customer_addresses.count()
     order_history = Order.objects.filter(customer=customer).prefetch_related('orderitems__menu').order_by('-created_at')
-    context = {'users': users, 'customer_adress': customer_adress, 'order_history': order_history}
+    
+    # Kullanıcı 5'ten az adrese sahipse formu göster
+    can_add_more_addresses = address_count < 5
+    form = CustomerAddressForm(request.POST or None) if can_add_more_addresses else None
+
+    if request.method == "POST" and form and form.is_valid():
+        address = form.save(commit=False)
+        address.customer = customer
+        address.save()
+        messages.success(request, 'Your address has been created.')
+        return redirect('profile')
+
+    # Formun gösterilip gösterilmeyeceğine dair mesaj
+    if not can_add_more_addresses:
+        messages.warning(request, 'You can only add up to 5 addresses.')
+    
+    context = {
+        'customer_email': customer_email, 'customer_adress': customer_adress, 'order_history': order_history, 
+        'form': form, 'can_add_more_addresses': can_add_more_addresses, 'address_count': address_count
+        }
     return render(request, 'profile.html', context)
 
     
@@ -171,26 +181,26 @@ def remove_from_cart(request, id):
     except (Cart.DoesNotExist, ValueError):
         return JsonResponse({"success": False, "message": "Cart item not found or invalid data."})
 
-# simdi order sayfasında restoranın name_slug'ını alıp, order sayfasına gönderiyoruz.
-# sonra order sayfasında, name_slug'ı kullanarak restoranı buluyoruz.
-# order sayfasında, sepetin dolu olup olmadığını kontrol ediyoruz.
+
+
 # eğer sepet boşsa, kullanıcıya hata mesajı gösteriyoruz. ve restoranın sayfasına yönlendiriyoruz.
+# order verdikten sonra rejected olursa database deki quantity'yi geri almak için ne yapacağız?
 
 @login_required(login_url='/login')
 def order(request):
-    form = OrderForm(request.POST or None)
     customer = request.user
     cart_items = Cart.objects.filter(customer=request.user)
+    current_restaurant = Cart.objects.filter(customer=request.user).select_related('menu__restaurant')
     total_price = sum(item.total_price for item in cart_items)
     addresses = Adress.objects.filter(customer=customer)
     context = {
         'addresses': addresses,
-        'form': form,
         'cart_items': cart_items,
         'total_price': total_price,
+        'current_restaurant': current_restaurant,
     }
 
-    if request.method == "POST" and form.is_valid():
+    if request.method == "POST":
         selected_address_id = request.POST.get('address')
         shipping_address = Adress.objects.filter(id=selected_address_id).first()
 
@@ -221,6 +231,7 @@ def order(request):
                     order=order,
                     menu=item.menu,
                     quantity=item.quantity,
+                    shipping=shipping_address,
                 )
                 item.menu.quantity -= item.quantity
                 item.menu.save()

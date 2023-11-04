@@ -12,7 +12,7 @@
 {% block content %}
 <body>
 
-    <main class="bg_gray">
+    <main class="bg_gray padded-main">
         <div class="container margin_60_20">
             {% if messages %}
             <div class="container mt-3">
@@ -70,7 +70,11 @@
                         <div class="box_order">
                             <div class="head">
                                 <h3>Sipariş Özeti</h3>
-                                <div>{{ restaurant.name}}</div>
+                                {% for item in current_restaurant %}
+                                    <div>
+                                        {{ item.menu.restaurant.name }}
+                                    </div>
+                                {% endfor %}
                             </div>
                             <!-- /head -->
                             <div class="main" id="cart-items">

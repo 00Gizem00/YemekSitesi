@@ -251,6 +251,7 @@ $.ajaxSetup({
 			dataType: 'json',
 			success: function(data) {
 				if (data.success) {
+					location.reload();
 					$(`#cart-item-${productId}`).remove();
 					$("#total-price").text(data.total_price);
 				} else {
